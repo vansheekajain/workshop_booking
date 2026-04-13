@@ -45,3 +45,6 @@ db.sqlite3
 #images/gif
 *.png
 *.gif
+
+# Node modules
+node_modules/
