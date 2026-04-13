@@ -480,23 +480,82 @@ def view_own_profile(request):
     if user.is_superuser:
         return redirect("admin")
     profile = user.profile
+    
+    # Helper function to get profile data as dict
+    def get_profile_data(user, profile):
+        return {
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name,
+                'get_full_name': user.get_full_name(),
+                'date_joined': user.date_joined.isoformat() if user.date_joined else None,
+            },
+            'institute': profile.institute or '',
+            'phone_number': profile.phone_number or '',
+            'department': profile.department or '',
+            'state': profile.state or '',
+            'title': profile.title or '',
+            'position': profile.position or '',
+            'location': profile.location or '',
+            'workshop_count': Workshop.objects.filter(
+                Q(instructor=user) | Q(coordinator=user)
+            ).count(),
+        }
+    
     if request.method == 'POST':
+        # Check if this is a JSON/AJAX request
+        is_json_request = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+                         'application/json' in request.headers.get('Accept', '')
+        
         form = ProfileForm(request.POST, user=user, instance=profile)
         if form.is_valid():
             form_data = form.save(commit=False)
             form_data.user = user
-            form_data.user.first_name = request.POST['first_name']
-            form_data.user.last_name = request.POST['last_name']
+            form_data.user.first_name = request.POST.get('first_name', '')
+            form_data.user.last_name = request.POST.get('last_name', '')
             form_data.user.save()
             form_data.save()
-            messages.add_message(request, messages.SUCCESS, "Profile updated.")
-            return redirect(reverse("workshop_app:view_own_profile"))
+            
+            # Return JSON response for AJAX requests
+            if is_json_request:
+                updated_profile = get_profile_data(user, form_data)
+                return JsonResponse({
+                    'success': True,
+                    'message': 'Profile updated successfully',
+                    'data': updated_profile
+                })
+            else:
+                # Return HTML response with redirect
+                messages.add_message(request, messages.SUCCESS, "Profile updated.")
+                return redirect(reverse("workshop_app:view_own_profile"))
         else:
-            messages.add_message(
-                request, messages.ERROR, "Profile update failed!"
-            )
+            # Return error response
+            if is_json_request:
+                errors = {field: errors[0] for field, errors in form.errors.items()}
+                return JsonResponse({
+                    'success': False,
+                    'message': 'Profile update failed',
+                    'errors': errors
+                }, status=400)
+            else:
+                messages.add_message(
+                    request, messages.ERROR, "Profile update failed!"
+                )
     else:
         form = ProfileForm(user=user, instance=profile)
+    
+    # Handle GET requests - check if JSON response is requested
+    is_json_request = request.headers.get('X-Requested-With') == 'XMLHttpRequest' or \
+                     'application/json' in request.headers.get('Accept', '')
+    
+    if is_json_request:
+        profile_data = get_profile_data(user, profile)
+        return JsonResponse({
+            'success': True,
+            'data': profile_data
+        })
 
     return render(request, "workshop_app/view_profile.html",
                   {"profile": profile, "Workshops": None, "form": form})
